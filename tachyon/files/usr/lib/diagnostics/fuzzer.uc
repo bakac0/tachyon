@@ -312,6 +312,12 @@ function replace_all_literal(value, needle, replacement) {
     return result;
 }
 
+function flowseal_fake_dir_ready(path) {
+    return path && fs.stat(path) != null &&
+        fs.stat(path + "/ACTIVE_DISCORD_UDP.bin") != null &&
+        fs.stat(path + "/quic_initial_www_google_com.bin") != null;
+}
+
 function resolve_flowseal_fake_files(args_str) {
     args_str = as_string(args_str);
     if (index(args_str, FLOWSEAL_FAKE_DIR) < 0)
@@ -326,7 +332,7 @@ function resolve_flowseal_fake_files(args_str) {
         "/usr/lib/tachyon/providers/zapret/files/fake"
     ];
     for (let d in candidate_dirs) {
-        if (d && fs.stat(d) != null)
+        if (flowseal_fake_dir_ready(d))
             return replace_all_literal(args_str, FLOWSEAL_FAKE_DIR, d);
     }
     return replace_all_literal(args_str, FLOWSEAL_FAKE_DIR, "/opt/zapret/files/fake");
