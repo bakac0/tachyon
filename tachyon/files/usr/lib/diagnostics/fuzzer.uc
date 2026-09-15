@@ -20,6 +20,7 @@ let array_or_empty = common.array_or_empty;
 
 const CONFIG_NAME = getenv("TACHYON_CONFIG_NAME") || "tachyon";
 const LIB_DIR = getenv("TACHYON_LIB") || "/usr/lib/tachyon";
+const FLOWSEAL_FAKE_DIR = "FLOWSEAL_FAKE_DIR";
 const STATE_DIR = getenv("TACHYON_FUZZER_STATE_DIR") || "/var/run/tachyon";
 const STATE_FILE = STATE_DIR + "/fuzzer-state.json";
 const PID_FILE = STATE_DIR + "/fuzzer-worker.pid";
@@ -1020,7 +1021,6 @@ const STRATEGIES_ZAPRET = [
 // the UI can identify their provenance and users can compare both families.
 // FLOWSEAL_FAKE_DIR is resolved to the installed provider files/fake dir at
 // probe/apply time; it is deliberately not a shell variable in the presets.
-const FLOWSEAL_FAKE_DIR = "FLOWSEAL_FAKE_DIR";
 const STRATEGIES_FLOWSEAL = [
     { id: "flowseal_general", name: "Flowseal General", engine: "zapret", args: "--filter-udp=443 --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fake-quic=" + FLOWSEAL_FAKE_DIR + "/quic_initial_www_google_com.bin", description: "Flowseal general profile with QUIC fake." },
     { id: "flowseal_alt", name: "Flowseal ALT", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake,fakedsplit --dpi-desync-repeats=6 --dpi-desync-fooling=ts --dpi-desync-fakedsplit-pattern=0x00 --dpi-desync-fake-tls=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_www_google_com.bin --dpi-desync-fake-http=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_max_ru.bin", description: "Port of general (ALT).bat." },
