@@ -294,6 +294,26 @@ function resolve_zapret2_blobs(args_str) {
     return blob_flags;
 }
 
+function resolve_flowseal_fake_files(args_str) {
+    args_str = as_string(args_str);
+    if (index(args_str, FLOWSEAL_FAKE_DIR) < 0)
+        return args_str;
+
+    let candidate_dirs = [
+        getenv("ZAPRET_PROVIDER_FILES_DIR") ? getenv("ZAPRET_PROVIDER_FILES_DIR") + "/fake" : null,
+        "/opt/zapret/files/fake",
+        "/usr/share/zapret/files/fake",
+        "/etc/zapret/files/fake",
+        LIB_DIR + "/providers/zapret/files/fake",
+        "/usr/lib/tachyon/providers/zapret/files/fake"
+    ];
+    for (let d in candidate_dirs) {
+        if (d && fs.stat(d) != null)
+            return replace(args_str, FLOWSEAL_FAKE_DIR, d);
+    }
+    return replace(args_str, FLOWSEAL_FAKE_DIR, "/opt/zapret/files/fake");
+}
+
 function setup_fuzzer_direct_nftables(qnum, is_udp) {
     system("nft add table inet tachyon_fuzzer 2>/dev/null");
     system("nft 'add chain inet tachyon_fuzzer output { type filter hook output priority -200 ; policy accept; }' 2>/dev/null");
@@ -966,6 +986,37 @@ const STRATEGIES_ZAPRET = [
         args: "--dpi-desync=fake,split2 --dpi-desync-split-pos=1 --dpi-desync-repeats=6 --dpi-desync-ttl=8 --dpi-desync-fooling=badseq",
         description: "Sends 6 consecutive fake packets to saturate DPI connection tracking."
     }
+];
+
+// Flowseal's general*.bat profiles, ported from the upstream Windows bundle
+// to nfqws arguments. Keep these separate from the Tachyon-native presets so
+// the UI can identify their provenance and users can compare both families.
+// FLOWSEAL_FAKE_DIR is resolved to the installed provider files/fake dir at
+// probe/apply time; it is deliberately not a shell variable in the presets.
+const FLOWSEAL_FAKE_DIR = "FLOWSEAL_FAKE_DIR";
+const STRATEGIES_FLOWSEAL = [
+    { id: "flowseal_general", name: "Flowseal General", engine: "zapret", args: "--filter-udp=443 --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fake-quic=" + FLOWSEAL_FAKE_DIR + "/quic_initial_www_google_com.bin", description: "Flowseal general profile with QUIC fake." },
+    { id: "flowseal_alt", name: "Flowseal ALT", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake,fakedsplit --dpi-desync-repeats=6 --dpi-desync-fooling=ts --dpi-desync-fakedsplit-pattern=0x00 --dpi-desync-fake-tls=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_www_google_com.bin --dpi-desync-fake-http=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_max_ru.bin", description: "Port of general (ALT).bat." },
+    { id: "flowseal_alt2", name: "Flowseal ALT2", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=multisplit --dpi-desync-split-seqovl=652 --dpi-desync-split-pos=2 --dpi-desync-split-seqovl-pattern=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_www_google_com.bin", description: "Flowseal multisplit profile with 652-byte overlap." },
+    { id: "flowseal_alt3", name: "Flowseal ALT3", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake,hostfakesplit --dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com --dpi-desync-hostfakesplit-mod=host=www.google.com,altorder=1 --dpi-desync-fooling=ts --dpi-desync-fake-http=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_max_ru.bin", description: "Flowseal hostfakesplit profile." },
+    { id: "flowseal_alt4", name: "Flowseal ALT4", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake,multisplit --dpi-desync-repeats=6 --dpi-desync-fooling=badseq --dpi-desync-badseq-increment=1000 --dpi-desync-fake-tls=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_www_google_com.bin --dpi-desync-fake-http=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_max_ru.bin", description: "Flowseal badseq multisplit profile." },
+    { id: "flowseal_alt6", name: "Flowseal ALT6", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=multisplit --dpi-desync-split-seqovl=681 --dpi-desync-split-pos=1 --dpi-desync-split-seqovl-pattern=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_www_google_com.bin", description: "Flowseal 681-byte Google ClientHello overlap." },
+    { id: "flowseal_alt7", name: "Flowseal ALT7", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=multisplit --dpi-desync-split-pos=2,sniext+1 --dpi-desync-split-seqovl=679 --dpi-desync-split-seqovl-pattern=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_www_google_com.bin", description: "Flowseal two-point SNI extension split." },
+    { id: "flowseal_alt8", name: "Flowseal ALT8", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake --dpi-desync-fake-tls-mod=none --dpi-desync-repeats=6 --dpi-desync-fooling=badseq --dpi-desync-badseq-increment=2 --dpi-desync-fake-http=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_max_ru.bin", description: "Flowseal minimal fake TLS profile." },
+    { id: "flowseal_alt9", name: "Flowseal ALT9", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=hostfakesplit --dpi-desync-repeats=4 --dpi-desync-fooling=ts --dpi-desync-hostfakesplit-mod=host=www.google.com", description: "Flowseal hostfakesplit-only profile." },
+    { id: "flowseal_alt10", name: "Flowseal ALT10", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fooling=ts --dpi-desync-fake-tls=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_www_google_com.bin --dpi-desync-fake-http=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_4pda_to.bin", description: "Flowseal fake TLS profile with 4PDA pattern." },
+    { id: "flowseal_alt11", name: "Flowseal ALT11", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake,multisplit --dpi-desync-split-seqovl=681 --dpi-desync-split-pos=1 --dpi-desync-fooling=ts --dpi-desync-repeats=8 --dpi-desync-split-seqovl-pattern=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_www_google_com.bin --dpi-desync-fake-tls=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_www_google_com.bin", description: "Flowseal fake plus overlap profile." },
+    { id: "flowseal_alt12", name: "Flowseal ALT12", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake,multisplit --dpi-desync-split-seqovl=664 --dpi-desync-split-pos=1 --dpi-desync-fooling=ts --dpi-desync-repeats=8 --dpi-desync-split-seqovl-pattern=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_max_ru.bin --dpi-desync-fake-tls=" + FLOWSEAL_FAKE_DIR + "/stun.bin --dpi-desync-fake-http=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_max_ru.bin", description: "Flowseal Max.ru overlap profile." },
+    { id: "flowseal_alt13", name: "Flowseal ALT13", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake,hostfakesplit --dpi-desync-fooling=ts --dpi-desync-hostfakesplit-mod=host=mail.ru,altorder=1 --dpi-desync-repeats=5 --dpi-desync-fake-tls=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_sochi_park.bin --dpi-desync-fake-http=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_sochi_park.bin", description: "Flowseal regional fake TLS profile." },
+    { id: "flowseal_exp", name: "Flowseal EXP", engine: "zapret", args: "--filter-udp=19294-19344,50000-50100 --dpi-desync=fake --dpi-desync-any-protocol=1 --dpi-desync-fake-discord=" + FLOWSEAL_FAKE_DIR + "/quic_initial_www_google_com.bin --dpi-desync-fake-unknown-udp=" + FLOWSEAL_FAKE_DIR + "/ACTIVE_DISCORD_UDP.bin --dpi-desync-repeats=4 --dpi-desync-cutoff=n4", description: "Flowseal experimental UDP profile." },
+    { id: "flowseal_fake_tls_auto", name: "Flowseal FAKE TLS AUTO", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake,fakedsplit --dpi-desync-split-pos=1 --dpi-desync-fooling=badseq --dpi-desync-badseq-increment=2 --dpi-desync-repeats=8 --dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com --dpi-desync-fake-http=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_max_ru.bin", description: "Flowseal FAKE TLS AUTO profile." },
+    { id: "flowseal_simple_fake", name: "Flowseal SIMPLE FAKE", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fake-tls=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_www_google_com.bin", description: "Flowseal SIMPLE FAKE profile." },
+    { id: "flowseal_alt5", name: "Flowseal ALT5", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake,multisplit --dpi-desync-split-pos=1 --dpi-desync-fooling=badseq --dpi-desync-repeats=6 --dpi-desync-fake-tls=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_www_google_com.bin", description: "Flowseal ALT5 compatibility profile." },
+    { id: "flowseal_fake_tls_auto_alt", name: "Flowseal FAKE TLS AUTO ALT", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake,fakedsplit --dpi-desync-split-pos=1 --dpi-desync-fooling=badseq --dpi-desync-badseq-increment=2 --dpi-desync-repeats=8 --dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com", description: "Flowseal FAKE TLS AUTO ALT profile." },
+    { id: "flowseal_fake_tls_auto_alt2", name: "Flowseal FAKE TLS AUTO ALT2", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake,fakedsplit --dpi-desync-split-pos=1 --dpi-desync-fooling=badseq --dpi-desync-badseq-increment=2 --dpi-desync-repeats=8 --dpi-desync-fake-tls-mod=rnd,dupsid,sni=ya.ru", description: "Flowseal FAKE TLS AUTO ALT2 profile." },
+    { id: "flowseal_fake_tls_auto_alt3", name: "Flowseal FAKE TLS AUTO ALT3", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake,fakedsplit --dpi-desync-split-pos=1 --dpi-desync-fooling=badseq --dpi-desync-badseq-increment=2 --dpi-desync-repeats=8 --dpi-desync-fake-tls-mod=rnd,dupsid,sni=mail.ru", description: "Flowseal FAKE TLS AUTO ALT3 profile." },
+    { id: "flowseal_simple_fake_alt", name: "Flowseal SIMPLE FAKE ALT", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fooling=ts --dpi-desync-fake-tls=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_www_google_com.bin", description: "Flowseal SIMPLE FAKE ALT profile." },
+    { id: "flowseal_simple_fake_alt2", name: "Flowseal SIMPLE FAKE ALT2", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fooling=badseq --dpi-desync-fake-tls=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_max_ru.bin", description: "Flowseal SIMPLE FAKE ALT2 profile." }
 ];
 
 const STRATEGIES_BYEDPI = [
@@ -2410,6 +2461,8 @@ function run_probe(engine, args_str, target_key, custom_url) {
         if (is_z2) {
             lua_init_flags = get_zapret2_lua_flags(args_str);
             blob_flags = resolve_zapret2_blobs(args_str);
+        } else {
+            args_str = resolve_flowseal_fake_files(args_str);
         }
         
         let filter_prefix = "";
@@ -2833,6 +2886,8 @@ function normalize_strategy_for_uci(engine, args_val) {
         if (blob_defs != "") {
             args_val = trim(blob_defs) + " " + args_val;
         }
+    } else if (engine == "zapret") {
+        args_val = resolve_flowseal_fake_files(args_val);
     }
     return args_val;
 }
@@ -2945,10 +3000,10 @@ if (op == "start") {
         patterns: get_patterns_config(),
         zapret2: get_strategies_for_engine("zapret2", strat_mode),
         zapret: get_strategies_for_engine("zapret", strat_mode),
-        byedpi: get_strategies_for_engine("byedpi", strat_mode)
+        byedpi: get_strategies_for_engine("byedpi", strat_mode),
+        flowseal: strat_mode == "presets" ? STRATEGIES_FLOWSEAL : []
     }));
 } else {
     warn("Usage: fuzzer.uc [start|status|stop|apply|strategies|generate|get_patterns|save_patterns|reset_patterns|ai_synthesize|detect_dpi|auto_apply|history|clear_history|worker] ...\n");
     exit(1);
 }
-

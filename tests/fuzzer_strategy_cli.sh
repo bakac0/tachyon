@@ -37,6 +37,10 @@ if (!Array.isArray(val.byedpi) || val.byedpi.length === 0) {
   console.error("Missing byedpi strategies");
   process.exit(1);
 }
+if (!Array.isArray(val.flowseal) || val.flowseal.length < 10) {
+  console.error("Missing Flowseal strategy list");
+  process.exit(1);
+}
 NODE
 
 # 2. Check each strategy passes its respective engine validator
@@ -79,6 +83,23 @@ if (!val.valid) {
 }
 NODE
 done <<< "$zapret_args"
+
+flowseal_args="$(JSON_VALUE="$strategies_json" node - <<'NODE'
+const val = JSON.parse(process.env.JSON_VALUE);
+for (const s of val.flowseal) console.log(s.args);
+NODE
+)"
+while IFS= read -r args; do
+  [ -n "$args" ] || continue
+  check="$(ucode -L "$TACHYON_LIB" -- "$ZAPRET_VALIDATOR" validate-json nfqws "$args")"
+  JSON_VALUE="$check" node - <<'NODE'
+const val = JSON.parse(process.env.JSON_VALUE);
+if (!val.valid) {
+  console.error("Flowseal strategy invalid:", val);
+  process.exit(1);
+}
+NODE
+done <<< "$flowseal_args"
 
 zapret2_args="$(JSON_VALUE="$strategies_json" node - <<'NODE'
 const val = JSON.parse(process.env.JSON_VALUE);
@@ -174,4 +195,3 @@ echo "$lua_res" | grep -q 'zapret-antidpi.lua' || fail "missing zapret-antidpi.l
 echo "$lua_res" | grep -q 'zapret-auto.lua' || fail "missing zapret-auto.lua in resolved lua flags"
 
 printf 'PASS: fuzzer_strategy_cli\n'
-

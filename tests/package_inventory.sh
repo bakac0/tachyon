@@ -32,6 +32,18 @@ for rel in "${required_sources[@]}"; do
   grep -Fq "$rel" "$BUILD_SH" || fail "build.sh does not package $rel (diverges from Makefile)"
 done
 
+# Flowseal presets depend on architecture-independent fake packet samples;
+# zapret installation must provision the complete upstream .bin set.
+grep -Fq 'function ensure_flowseal_fake_files' "$ROOT_DIR/tachyon/files/usr/lib/components/action.uc" ||
+  fail "zapret installer must provision Flowseal fake .bin files"
+for fake in \
+  ACTIVE_DISCORD_UDP.bin ACTIVE_GAME_UDP.bin quic_initial_www_google_com.bin \
+  stun.bin stun2.bin tls_clienthello_4pda_to.bin tls_clienthello_max_ru.bin \
+  tls_clienthello_sochi_park.bin tls_clienthello_www_google_com.bin; do
+  grep -Fq "\"$fake\"" "$ROOT_DIR/tachyon/files/usr/lib/components/action.uc" ||
+    fail "zapret installer missing Flowseal fake asset $fake"
+done
+
 # Derived file installed only by the packaging recipes (not present in files/).
 grep -Fq '/usr/lib/tachyon/defaults/config' "$MAKEFILE" ||
   fail "Makefile no longer installs defaults/config"

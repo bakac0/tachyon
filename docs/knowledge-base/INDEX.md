@@ -25,6 +25,7 @@ Welcome to the comprehensive technical knowledge base for **Tachyon**. This dire
 | [**15. Zapret v1 (nfqws) Field Guide**](15_ZAPRET1_NFQWS_FIELD_GUIDE.md) | Complete Zapret v1 CLI specification | NFQUEUE desync modes, split-pos, seqovl, syndata, ipfrag, fooling |
 | [**16. ByeDPI (ciadpi) Reference**](16_BYEDPI_CIADPI_REFERENCE.md) | Complete ByeDPI SOCKS5/TProxy manual | Split, disorder, fake, ttl, auto-mode, oob, tlsrec, ip-frag |
 | [**17. TSPU / DPI Signatures & Counters**](17_TSPU_DPI_SIGNATURES_AND_COUNTERS.md) | TSPU filtering mechanics and counters | GoogleVideo 4K, Discord WebRTC, TLS 1.3 RST, TTL distance calculation |
+| [**18. Flowseal Strategy Import**](18_FLOWSEAL_STRATEGIES.md) | Flowseal profiles and fake packet assets | `flowseal` strategy list, nfqws path resolution, installer asset delivery |
 
 ---
 

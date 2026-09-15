@@ -690,6 +690,48 @@ function download_with_retry(url, output_path, label) {
     return false;
 }
 
+// The Flowseal profiles use the same architecture-independent fake packet
+// format as nfqws. The zapret package normally ships its own fake directory,
+// but not every package build contains the extra Flowseal samples. Install
+// the complete upstream .bin set next to the provider so every exposed
+// Flowseal preset is runnable after a fresh zapret install.
+const FLOWSEAL_FAKE_FILES = [
+    "ACTIVE_DISCORD_UDP.bin",
+    "ACTIVE_GAME_UDP.bin",
+    "quic_initial_4pda_to.bin",
+    "quic_initial_5ka_ru.bin",
+    "quic_initial_rutube_ru.bin",
+    "quic_initial_steamcommunity_com.bin",
+    "quic_initial_tencent_com.bin",
+    "quic_initial_www_google_com.bin",
+    "stun.bin",
+    "stun2.bin",
+    "tls_clienthello_4pda_to.bin",
+    "tls_clienthello_5ka_ru.bin",
+    "tls_clienthello_max_ru.bin",
+    "tls_clienthello_sochi_park.bin",
+    "tls_clienthello_www_google_com.bin"
+];
+
+function ensure_flowseal_fake_files() {
+    let fake_dir = (getenv("ZAPRET_PROVIDER_FILES_DIR") || constants.ZAPRET_PROVIDER_FILES_DIR || "/opt/zapret/files") + "/fake";
+    if (!common.ensure_dir(fake_dir))
+        return false;
+
+    let base_url = "https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/main/bin/";
+    for (let name in FLOWSEAL_FAKE_FILES) {
+        let target = fake_dir + "/" + name;
+        let st = fs.stat(target);
+        if (st && st.size > 0)
+            continue;
+        if (!download_with_retry(base_url + name, target, "Flowseal " + name) || !file_nonempty(target)) {
+            remove_file(target);
+            return false;
+        }
+    }
+    return true;
+}
+
 function fetch_github_release_json(owner, repo) {
     let url = "https://api.github.com/repos/" + as_string(owner) + "/" + as_string(repo) + "/releases/latest";
     let response = http_get(url);
@@ -1517,6 +1559,9 @@ function install_zapret_like(component, action, runtime_module, resolve_fn, labe
 
     if (!run_logged("Installing " + label + " package " + pkg.name, pkg_install_files_command([ pkg.file ])))
         action_fail(component, action, "Failed to install " + label + " package", current_version, pkg.version, "", release.release_url || "");
+
+    if (component == "zapret" && !ensure_flowseal_fake_files())
+        action_fail(component, action, "Failed to install Flowseal fake .bin files required by the zapret strategies", current_version, pkg.version, "", release.release_url || "");
 
     disable_standalone_service(component);
     restart_tachyon_after_successful_change();
