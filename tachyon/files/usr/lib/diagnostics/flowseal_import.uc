@@ -54,6 +54,9 @@ function normalize_line(line) {
         if (token == "" || unsupported_token(token))
             continue;
         token = replace(token, "%BIN%", FLOWSEAL_FAKE_DIR + "/");
+        token = replace(token, "%GameFilterTCP%", "80,443,2053,2083,2087,2096,8443");
+        token = replace(token, "%GameFilterUDP%", "443,19294-19344,50000-50100");
+        token = replace(token, "^!", "!");
         if (index(token, "\\") >= 0)
             token = replace(token, "\\", "/");
         push(output, token);
