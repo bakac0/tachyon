@@ -58,7 +58,7 @@ function normalize_line(line) {
             token = replace(token, "\\", "/");
         push(output, token);
     }
-    return join(output, " ");
+    return join(" ", output);
 }
 
 function file_name(path) {
@@ -95,7 +95,7 @@ function parse_file(path) {
         id: "flowseal_import_" + slug(name),
         name: "Flowseal " + name,
         engine: "zapret",
-        args: join(args, " --new "),
+        args: join(" --new ", args),
         source: path,
         description: "Imported from Flowseal " + name + ".bat",
         imported: true

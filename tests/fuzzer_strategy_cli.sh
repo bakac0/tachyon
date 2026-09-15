@@ -41,6 +41,12 @@ if (!Array.isArray(val.flowseal) || val.flowseal.length < 10) {
   console.error("Missing Flowseal strategy list");
   process.exit(1);
 }
+for (const s of val.flowseal) {
+  if (typeof s.args !== "string" || s.args.trim() === "") {
+    console.error("Flowseal strategy has empty args:", s);
+    process.exit(1);
+  }
+}
 if (!val.target_suites || !val.target_suites.discord_voice_suite) {
   console.error("Missing Discord voice target suite");
   process.exit(1);
@@ -168,6 +174,8 @@ grep -q 'mode == "flowseal"' "$FUZZER" || fail "fuzzer missing direct Flowseal m
 grep -q 'diagnostics.flowseal_import' "$FUZZER" || fail "fuzzer missing Flowseal importer"
 grep -q 'FLOWSEAL_STRATEGIES_ZIP' "$ROOT_DIR/tachyon/files/usr/lib/diagnostics/flowseal_import.uc" || fail "Flowseal importer missing upstream archive URL"
 grep -q 'unzip' "$ROOT_DIR/tachyon/files/usr/lib/diagnostics/flowseal_import.uc" || fail "Flowseal importer missing archive extraction"
+grep -q 'join(" ", output)' "$ROOT_DIR/tachyon/files/usr/lib/diagnostics/flowseal_import.uc" || fail "Flowseal importer must use ucode join separator-first order"
+grep -q 'join(" --new ", args)' "$ROOT_DIR/tachyon/files/usr/lib/diagnostics/flowseal_import.uc" || fail "Flowseal importer must join parsed strategy args"
 grep -q 'voice_profile_ready' "$FUZZER" || fail "voice probe must use a typed readiness verdict"
 grep -q 'flowseal_source' "$FUZZER" || fail "fuzzer status must expose Flowseal import source"
 if grep -q 'udp://discord-voice' "$FUZZER"; then fail "voice probe must not expose a fake UDP URL"; fi
