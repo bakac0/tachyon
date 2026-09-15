@@ -176,6 +176,8 @@ grep -q 'FLOWSEAL_STRATEGIES_ZIP' "$ROOT_DIR/tachyon/files/usr/lib/diagnostics/f
 grep -q 'unzip' "$ROOT_DIR/tachyon/files/usr/lib/diagnostics/flowseal_import.uc" || fail "Flowseal importer missing archive extraction"
 grep -q 'join(" ", output)' "$ROOT_DIR/tachyon/files/usr/lib/diagnostics/flowseal_import.uc" || fail "Flowseal importer must use ucode join separator-first order"
 grep -q 'join(" --new ", args)' "$ROOT_DIR/tachyon/files/usr/lib/diagnostics/flowseal_import.uc" || fail "Flowseal importer must join parsed strategy args"
+grep -q 'FLOWSEAL_FAKE_DIR/g' "$FUZZER" || fail "fuzzer must replace every Flowseal fake path occurrence"
+grep -q 'Flowseal fake asset path was not resolved' "$FUZZER" || fail "fuzzer must reject unresolved Flowseal fake paths"
 grep -q 'voice_profile_ready' "$FUZZER" || fail "voice probe must use a typed readiness verdict"
 grep -q 'flowseal_source' "$FUZZER" || fail "fuzzer status must expose Flowseal import source"
 if grep -q 'udp://discord-voice' "$FUZZER"; then fail "voice probe must not expose a fake UDP URL"; fi

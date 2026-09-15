@@ -310,9 +310,9 @@ function resolve_flowseal_fake_files(args_str) {
     ];
     for (let d in candidate_dirs) {
         if (d && fs.stat(d) != null)
-            return replace(args_str, FLOWSEAL_FAKE_DIR, d);
+            return replace(args_str, /FLOWSEAL_FAKE_DIR/g, d);
     }
-    return replace(args_str, FLOWSEAL_FAKE_DIR, "/opt/zapret/files/fake");
+    return replace(args_str, /FLOWSEAL_FAKE_DIR/g, "/opt/zapret/files/fake");
 }
 
 function setup_fuzzer_direct_nftables(qnum, is_udp) {
@@ -2360,6 +2360,25 @@ function rerank_strategies_by_dpi(strategies, dpi_type) {
 
 function run_probe(engine, args_str, target_key, custom_url) {
     cleanup_temp_daemons();
+
+    // Imported Flowseal profiles use a portable marker for fake packet files.
+    // Resolve it before deriving transport flags or starting any provider so
+    // every occurrence in a multi-profile command is converted.
+    args_str = resolve_flowseal_fake_files(args_str);
+    if (index(as_string(args_str), FLOWSEAL_FAKE_DIR) >= 0) {
+        return {
+            success: false,
+            http_code: 0,
+            handshake_ms: 0,
+            ttfb_ms: 0,
+            speed_kbps: 0,
+            data_bytes: 0,
+            data_verified: false,
+            score: 0,
+            error: "Flowseal fake asset path was not resolved",
+            sub_probes: []
+        };
+    }
     
     let urls_list = resolve_target_urls_list(target_key, custom_url);
     let total_urls = length(urls_list);
@@ -2521,8 +2540,6 @@ function run_probe(engine, args_str, target_key, custom_url) {
         if (is_z2) {
             lua_init_flags = get_zapret2_lua_flags(args_str);
             blob_flags = resolve_zapret2_blobs(args_str);
-        } else {
-            args_str = resolve_flowseal_fake_files(args_str);
         }
         
         let filter_prefix = "";
