@@ -295,6 +295,22 @@ function resolve_zapret2_blobs(args_str) {
     return blob_flags;
 }
 
+function replace_all_literal(value, needle, replacement) {
+    value = as_string(value);
+    needle = as_string(needle);
+    replacement = as_string(replacement);
+    if (needle == "")
+        return value;
+
+    let result = value;
+    let pos = index(result, needle);
+    while (pos >= 0) {
+        result = substr(result, 0, pos) + replacement + substr(result, pos + length(needle));
+        pos = index(result, needle);
+    }
+    return result;
+}
+
 function resolve_flowseal_fake_files(args_str) {
     args_str = as_string(args_str);
     if (index(args_str, FLOWSEAL_FAKE_DIR) < 0)
@@ -310,9 +326,9 @@ function resolve_flowseal_fake_files(args_str) {
     ];
     for (let d in candidate_dirs) {
         if (d && fs.stat(d) != null)
-            return replace(args_str, /FLOWSEAL_FAKE_DIR/g, d);
+            return replace_all_literal(args_str, FLOWSEAL_FAKE_DIR, d);
     }
-    return replace(args_str, /FLOWSEAL_FAKE_DIR/g, "/opt/zapret/files/fake");
+    return replace_all_literal(args_str, FLOWSEAL_FAKE_DIR, "/opt/zapret/files/fake");
 }
 
 function setup_fuzzer_direct_nftables(qnum, is_udp) {
