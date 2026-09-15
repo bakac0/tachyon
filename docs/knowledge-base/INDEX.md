@@ -26,6 +26,7 @@ Welcome to the comprehensive technical knowledge base for **Tachyon**. This dire
 | [**16. ByeDPI (ciadpi) Reference**](16_BYEDPI_CIADPI_REFERENCE.md) | Complete ByeDPI SOCKS5/TProxy manual | Split, disorder, fake, ttl, auto-mode, oob, tlsrec, ip-frag |
 | [**17. TSPU / DPI Signatures & Counters**](17_TSPU_DPI_SIGNATURES_AND_COUNTERS.md) | TSPU filtering mechanics and counters | GoogleVideo 4K, Discord WebRTC, TLS 1.3 RST, TTL distance calculation |
 | [**18. Flowseal Strategy Import**](18_FLOWSEAL_STRATEGIES.md) | Flowseal profiles and fake packet assets | `flowseal` strategy list, nfqws path resolution, installer asset delivery |
+| [**19. StressOzz Flowseal Import**](19_STRESSOZZ_FLOWSEAL_IMPORT.md) | How Zapret-Manager imports Flowseal strategies | ZIP acquisition, `general*.bat` extraction, whitelist normalization, fake binaries, Tachyon recommendations |
 
 ---
 

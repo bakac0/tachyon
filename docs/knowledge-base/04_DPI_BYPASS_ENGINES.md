@@ -133,4 +133,7 @@ tachyon fuzzer_apply <engine> "<strategy_args>" [target_rule_or_global]
 
 # Вывод доступной матрицы стратегий
 tachyon fuzzer_strategies
+
+# Flowseal fake matrix + Discord Voice profile checks
+tachyon fuzzer_start zapret discord_voice_suite "" "" "" flowseal
 ```

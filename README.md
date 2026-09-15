@@ -210,8 +210,10 @@ Watchdog — сердце стабильности Tachyon, работающее
 
 ```bash
 # === Фаззер и тестирование стратегий обхода DPI ===
-tachyon fuzzer_start youtube_suite zapret2      # Запуск бенчмарка для YouTube на Zapret2
-tachyon fuzzer_start discord_suite zapret2      # Запуск бенчмарка для Discord (голос + UDP)
+tachyon fuzzer_start zapret2 youtube_suite      # Запуск бенчмарка для YouTube на Zapret2
+tachyon fuzzer_start zapret2 discord_suite      # Запуск бенчмарка для Discord (голос + UDP)
+tachyon fuzzer_start zapret discord_voice_suite "" "" "" flowseal # Подбор Flowseal fake + Discord Voice
+tachyon fuzzer_flowseal_update                  # Скачать и импортировать актуальные general*.bat Flowseal
 tachyon fuzzer_status                           # Текущий прогресс и результаты фаззера (JSON)
 tachyon fuzzer_stop                             # Немедленная остановка фаззера и очистка Netfilter
 tachyon fuzzer_apply <strategy_id>              # Применение найденной стратегии в конфигурацию UCI

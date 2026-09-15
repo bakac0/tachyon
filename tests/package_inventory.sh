@@ -12,6 +12,7 @@ fail() {
 
 [ -f "$MAKEFILE" ] || fail "tachyon/Makefile not found"
 [ -f "$BUILD_SH" ] || fail "build.sh not found"
+[ -f "$ROOT_DIR/tachyon/files/usr/lib/diagnostics/flowseal_import.uc" ] || fail "Flowseal importer source missing"
 
 # Release packages are produced by build.sh, while the OpenWrt feed build uses
 # tachyon/Makefile. Both must ship an identical file inventory or installs
@@ -36,10 +37,17 @@ done
 # zapret installation must provision the complete upstream .bin set.
 grep -Fq 'function ensure_flowseal_fake_files' "$ROOT_DIR/tachyon/files/usr/lib/components/action.uc" ||
   fail "zapret installer must provision Flowseal fake .bin files"
+grep -Fq 'component == "zapret" && !ensure_flowseal_fake_files()' "$ROOT_DIR/tachyon/files/usr/lib/components/action.uc" ||
+  fail "zapret install must fail when Flowseal fake assets cannot be repaired"
 for fake in \
-  ACTIVE_DISCORD_UDP.bin ACTIVE_GAME_UDP.bin quic_initial_www_google_com.bin \
-  stun.bin stun2.bin tls_clienthello_4pda_to.bin tls_clienthello_max_ru.bin \
-  tls_clienthello_sochi_park.bin tls_clienthello_www_google_com.bin; do
+  ACTIVE_DISCORD_UDP.bin ACTIVE_GAME_UDP.bin \
+  quic_initial_4pda_to.bin quic_initial_5ka_ru.bin \
+  quic_initial_rutube_ru.bin quic_initial_steamcommunity_com.bin \
+  quic_initial_tencent_com.bin quic_initial_www_google_com.bin \
+  stun.bin stun2.bin \
+  tls_clienthello_4pda_to.bin tls_clienthello_5ka_ru.bin \
+  tls_clienthello_max_ru.bin tls_clienthello_sochi_park.bin \
+  tls_clienthello_www_google_com.bin; do
   grep -Fq "\"$fake\"" "$ROOT_DIR/tachyon/files/usr/lib/components/action.uc" ||
     fail "zapret installer missing Flowseal fake asset $fake"
 done

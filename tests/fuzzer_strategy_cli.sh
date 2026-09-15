@@ -41,6 +41,24 @@ if (!Array.isArray(val.flowseal) || val.flowseal.length < 10) {
   console.error("Missing Flowseal strategy list");
   process.exit(1);
 }
+if (!val.target_suites || !val.target_suites.discord_voice_suite) {
+  console.error("Missing Discord voice target suite");
+  process.exit(1);
+}
+const voice = val.flowseal.filter((s) => s.voice === true);
+if (voice.length < 3) {
+  console.error("Missing Flowseal Discord voice fake matrix");
+  process.exit(1);
+}
+for (const s of voice) {
+  if (!s.args.includes("--filter-udp=19294-19344,50000-50100") ||
+      !s.args.includes("--filter-l7=discord,stun") ||
+      !s.args.includes("--dpi-desync-fake-discord=") ||
+      !s.args.includes("--dpi-desync-fake-stun=")) {
+    console.error("Invalid Flowseal voice strategy:", s);
+    process.exit(1);
+  }
+}
 NODE
 
 # 2. Check each strategy passes its respective engine validator
@@ -143,6 +161,17 @@ grep -q 'fuzzer_apply:' "$TACHYON_BIN" || fail "tachyon CLI missing fuzzer_apply
 grep -q 'fuzzer_strategies:' "$TACHYON_BIN" || fail "tachyon CLI missing fuzzer_strategies"
 grep -q 'fuzzer_generate:' "$TACHYON_BIN" || fail "tachyon CLI missing fuzzer_generate"
 grep -q 'fuzzer_ai_synthesize:' "$TACHYON_BIN" || fail "tachyon CLI missing fuzzer_ai_synthesize"
+grep -q 'discord_voice_suite' "$FUZZER" || fail "fuzzer missing Discord voice suite"
+grep -q 'voice_probe' "$FUZZER" || fail "fuzzer missing Discord voice probe"
+grep -q 'passed_checks' "$FUZZER" || fail "fuzzer missing check-count scoring"
+grep -q 'mode == "flowseal"' "$FUZZER" || fail "fuzzer missing direct Flowseal mode"
+grep -q 'diagnostics.flowseal_import' "$FUZZER" || fail "fuzzer missing Flowseal importer"
+grep -q 'FLOWSEAL_STRATEGIES_ZIP' "$ROOT_DIR/tachyon/files/usr/lib/diagnostics/flowseal_import.uc" || fail "Flowseal importer missing upstream archive URL"
+grep -q 'unzip' "$ROOT_DIR/tachyon/files/usr/lib/diagnostics/flowseal_import.uc" || fail "Flowseal importer missing archive extraction"
+grep -q 'voice_profile_ready' "$FUZZER" || fail "voice probe must use a typed readiness verdict"
+grep -q 'flowseal_source' "$FUZZER" || fail "fuzzer status must expose Flowseal import source"
+if grep -q 'udp://discord-voice' "$FUZZER"; then fail "voice probe must not expose a fake UDP URL"; fi
+grep -q 'fuzzer_flowseal_update:' "$TACHYON_BIN" || fail "tachyon CLI missing Flowseal update command"
 
 # 5. Check combinatorial strategies generation
 combo_tmp="$(mktemp "${TMPDIR:-/tmp}/fuzzer_combo_XXXXXX")"

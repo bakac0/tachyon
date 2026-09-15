@@ -4,6 +4,7 @@ let fs = require("fs");
 let common = require("core.common");
 let uci_core = require("core.uci");
 let rag = require("diagnostics.rag");
+let flowseal_import = require("diagnostics.flowseal_import");
 
 let as_string = common.as_string;
 let read_json_file = common.read_json_file;
@@ -430,11 +431,21 @@ const TARGET_SUITES = {
         ]
     },
     discord_suite: {
-        name: "Discord Full Suite (API + WSS Gateway + CDN)",
+        name: "Discord Full Suite (API + WSS Gateway + CDN + Voice profile)",
+        voice: true,
         urls: [
             { name: "API Gateway", url: "https://discord.com/api/v9/gateway", weight: 40 },
             { name: "Global Assets CDN", url: "https://cdn.discordapp.com/generate_204", weight: 30 },
             { name: "Discord Web Portal", url: "https://discord.com/login", weight: 30 }
+        ]
+    },
+    discord_voice_suite: {
+        name: "Discord Voice (UDP profile readiness + API)",
+        voice: true,
+        urls: [
+            { name: "API Gateway", url: "https://discord.com/api/v9/gateway", weight: 35 },
+            { name: "Global Assets CDN", url: "https://cdn.discordapp.com/generate_204", weight: 25 },
+            { name: "Discord Web Portal", url: "https://discord.com/login", weight: 20 }
         ]
     },
     twitch_suite: {
@@ -1008,7 +1019,9 @@ const STRATEGIES_FLOWSEAL = [
     { id: "flowseal_alt11", name: "Flowseal ALT11", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake,multisplit --dpi-desync-split-seqovl=681 --dpi-desync-split-pos=1 --dpi-desync-fooling=ts --dpi-desync-repeats=8 --dpi-desync-split-seqovl-pattern=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_www_google_com.bin --dpi-desync-fake-tls=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_www_google_com.bin", description: "Flowseal fake plus overlap profile." },
     { id: "flowseal_alt12", name: "Flowseal ALT12", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake,multisplit --dpi-desync-split-seqovl=664 --dpi-desync-split-pos=1 --dpi-desync-fooling=ts --dpi-desync-repeats=8 --dpi-desync-split-seqovl-pattern=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_max_ru.bin --dpi-desync-fake-tls=" + FLOWSEAL_FAKE_DIR + "/stun.bin --dpi-desync-fake-http=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_max_ru.bin", description: "Flowseal Max.ru overlap profile." },
     { id: "flowseal_alt13", name: "Flowseal ALT13", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake,hostfakesplit --dpi-desync-fooling=ts --dpi-desync-hostfakesplit-mod=host=mail.ru,altorder=1 --dpi-desync-repeats=5 --dpi-desync-fake-tls=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_sochi_park.bin --dpi-desync-fake-http=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_sochi_park.bin", description: "Flowseal regional fake TLS profile." },
-    { id: "flowseal_exp", name: "Flowseal EXP", engine: "zapret", args: "--filter-udp=19294-19344,50000-50100 --dpi-desync=fake --dpi-desync-any-protocol=1 --dpi-desync-fake-discord=" + FLOWSEAL_FAKE_DIR + "/quic_initial_www_google_com.bin --dpi-desync-fake-unknown-udp=" + FLOWSEAL_FAKE_DIR + "/ACTIVE_DISCORD_UDP.bin --dpi-desync-repeats=4 --dpi-desync-cutoff=n4", description: "Flowseal experimental UDP profile." },
+    { id: "flowseal_exp", name: "Flowseal EXP", engine: "zapret", voice: true, args: "--filter-udp=19294-19344,50000-50100 --filter-l7=discord,stun --dpi-desync=fake --dpi-desync-any-protocol=1 --dpi-desync-fake-discord=" + FLOWSEAL_FAKE_DIR + "/ACTIVE_DISCORD_UDP.bin --dpi-desync-fake-stun=" + FLOWSEAL_FAKE_DIR + "/ACTIVE_DISCORD_UDP.bin --dpi-desync-repeats=4 --dpi-desync-cutoff=n4", description: "Flowseal experimental Discord voice UDP profile." },
+    { id: "flowseal_voice_active", name: "Flowseal Discord Voice (ACTIVE)", engine: "zapret", voice: true, args: "--filter-udp=19294-19344,50000-50100 --filter-l7=discord,stun --dpi-desync=fake --dpi-desync-fake-discord=" + FLOWSEAL_FAKE_DIR + "/ACTIVE_DISCORD_UDP.bin --dpi-desync-fake-stun=" + FLOWSEAL_FAKE_DIR + "/ACTIVE_DISCORD_UDP.bin --dpi-desync-repeats=6", description: "Flowseal Discord Voice/STUN profile using the upstream active UDP fake." },
+    { id: "flowseal_voice_stun", name: "Flowseal Discord Voice (STUN)", engine: "zapret", voice: true, args: "--filter-udp=19294-19344,50000-50100 --filter-l7=discord,stun --dpi-desync=fake --dpi-desync-fake-discord=" + FLOWSEAL_FAKE_DIR + "/stun.bin --dpi-desync-fake-stun=" + FLOWSEAL_FAKE_DIR + "/stun.bin --dpi-desync-repeats=6", description: "Flowseal Discord Voice/STUN profile using the standard STUN fake." },
     { id: "flowseal_fake_tls_auto", name: "Flowseal FAKE TLS AUTO", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake,fakedsplit --dpi-desync-split-pos=1 --dpi-desync-fooling=badseq --dpi-desync-badseq-increment=2 --dpi-desync-repeats=8 --dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com --dpi-desync-fake-http=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_max_ru.bin", description: "Flowseal FAKE TLS AUTO profile." },
     { id: "flowseal_simple_fake", name: "Flowseal SIMPLE FAKE", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fake-tls=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_www_google_com.bin", description: "Flowseal SIMPLE FAKE profile." },
     { id: "flowseal_alt5", name: "Flowseal ALT5", engine: "zapret", args: "--filter-tcp=80,443 --dpi-desync=fake,multisplit --dpi-desync-split-pos=1 --dpi-desync-fooling=badseq --dpi-desync-repeats=6 --dpi-desync-fake-tls=" + FLOWSEAL_FAKE_DIR + "/tls_clienthello_www_google_com.bin", description: "Flowseal ALT5 compatibility profile." },
@@ -1551,6 +1564,9 @@ function get_strategies_for_engine(engine, mode) {
     engine = lc(as_string(engine));
     mode = lc(trim(as_string(mode || "presets")));
     let cfg = get_patterns_config();
+
+    if (mode == "flowseal")
+        return engine == "zapret" || engine == "all" ? STRATEGIES_FLOWSEAL : [];
     
     if (mode == "custom" || mode == "user") {
         let custom_list = [];
@@ -1625,6 +1641,50 @@ function resolve_target_urls_list(target_key, custom_url) {
     }
     let single = TARGET_URLS[target_key] || TARGET_URLS.youtube;
     return [ { name: target_key, url: single, weight: 100 } ];
+}
+
+function is_discord_voice_strategy(args_str) {
+    args_str = as_string(args_str);
+    return index(args_str, "--filter-udp=19294-19344,50000-50100") >= 0 &&
+        index(args_str, "--filter-l7=discord,stun") >= 0;
+}
+
+function voice_probe(args_str) {
+    let probe = {
+        target_name: "Discord Voice UDP profile",
+        transport: "udp",
+        port_range: "19294-19344,50000-50100",
+        voice: true,
+        success: false,
+        http_code: 0,
+        handshake_ms: 0,
+        ttfb_ms: 0,
+        speed_kbps: 0,
+        data_bytes: 0,
+        data_verified: false,
+        score: 0,
+        dpi_verdict: "failed",
+        error: ""
+    };
+    if (!is_discord_voice_strategy(args_str)) {
+        probe.error = "Missing Flowseal Discord Voice UDP filter profile";
+        return probe;
+    }
+    let fake_discord = match(args_str, /--dpi-desync-fake-discord=([^ ]+)/);
+    let fake_stun = match(args_str, /--dpi-desync-fake-stun=([^ ]+)/);
+    if (!fake_discord || !fake_discord[1] || !fake_stun || !fake_stun[1]) {
+        probe.error = "Discord Voice profile must define fake-discord and fake-stun";
+        return probe;
+    }
+    if (fs.stat(fake_discord[1]) == null || fs.stat(fake_stun[1]) == null) {
+        probe.error = "Discord Voice fake asset is missing";
+        return probe;
+    }
+    probe.success = true;
+    probe.data_verified = true;
+    probe.dpi_verdict = "voice_profile_ready";
+    probe.score = 100;
+    return probe;
 }
 
 function ensure_state_dir() {
@@ -2412,7 +2472,7 @@ function run_probe(engine, args_str, target_key, custom_url) {
                 break;
             }
         }
-        
+
         cleanup_temp_daemons();
         
         if (passed_count == total_urls) {
@@ -2536,6 +2596,7 @@ function run_probe(engine, args_str, target_key, custom_url) {
         let last_http = 0;
         let last_dpi_verdict = "available";
         let dns_flags = get_fuzzer_curl_dns_flags();
+        let passed_http_count = 0;
         
         for (let target_item in urls_list) {
             let target_flags = get_resolved_host_flags(target_item.url);
@@ -2560,6 +2621,7 @@ function run_probe(engine, args_str, target_key, custom_url) {
             
             if (single_res.success) {
                 passed_count++;
+                passed_http_count++;
                 sum_handshake += single_res.handshake_ms;
                 sum_ttfb += single_res.ttfb_ms;
                 sum_data_bytes += single_res.data_bytes || 0;
@@ -2572,23 +2634,36 @@ function run_probe(engine, args_str, target_key, custom_url) {
                 if (last_http == 0) last_http = single_res.http_code;
                 if (single_res.error && result.error == "") result.error = single_res.error;
                 last_dpi_verdict = single_res.dpi_verdict || "failed";
-                break;
             }
+        }
+
+        let voice_enabled = target_key == "discord_suite" || target_key == "discord_voice_suite";
+        if (voice_enabled && is_discord_voice_strategy(args_str)) {
+            let voice_result = voice_probe(args_str);
+            push(result.sub_probes, voice_result);
+            if (voice_result.success)
+                passed_count++;
+            else if (result.error == "")
+                result.error = voice_result.error;
         }
         
         cleanup_temp_daemons();
         
-        if (passed_count == total_urls) {
+        let total_checks = total_urls + ((voice_enabled && is_discord_voice_strategy(args_str)) ? 1 : 0);
+        result.passed_checks = passed_count;
+        result.total_checks = total_checks;
+        if (passed_count > 0) {
             result.success = true;
             result.http_code = last_http > 0 ? last_http : 200;
-            result.handshake_ms = int(sum_handshake / double(total_urls));
-            result.ttfb_ms = int(sum_ttfb / double(total_urls));
+            result.handshake_ms = passed_http_count > 0 ? int(sum_handshake / double(passed_http_count)) : 0;
+            result.ttfb_ms = passed_http_count > 0 ? int(sum_ttfb / double(passed_http_count)) : 0;
             result.speed_kbps = max_speed;
-            result.data_bytes = int(sum_data_bytes / double(total_urls));
-            result.data_verified = all_data_verified;
-            result.dpi_verdict = all_data_verified ? "verified_32k" : last_dpi_verdict;
-            result.score = 100 + max(0, 1000 - result.ttfb_ms) + int(result.speed_kbps / 10.0) + (result.data_verified ? 50 : 20);
-            result.error = "";
+            result.data_bytes = passed_http_count > 0 ? int(sum_data_bytes / double(passed_http_count)) : 0;
+            result.data_verified = all_data_verified && passed_http_count == total_urls;
+            result.dpi_verdict = result.data_verified ? "verified_32k" : last_dpi_verdict;
+            // Passed-check count dominates performance so a 3/4 strategy
+            // beats a 2/3 strategy; latency and throughput break ties.
+            result.score = passed_count * 100000 + max(0, 1000 - result.ttfb_ms) + int(result.speed_kbps / 10.0) + (result.data_verified ? 50 : 20);
         } else {
             result.success = false;
             result.http_code = last_http;
@@ -2597,7 +2672,7 @@ function run_probe(engine, args_str, target_key, custom_url) {
             result.dpi_verdict = last_dpi_verdict;
             result.score = 0;
             if (result.error == "") {
-                result.error = sprintf("Failed %d of %d endpoints", total_urls - passed_count, total_urls);
+                result.error = sprintf("Failed all %d checks", total_checks);
             }
         }
         
@@ -2642,12 +2717,35 @@ function run_fuzzer_worker(engine, target, custom_url, rule_section, custom_file
     save_fuzzer_state(state);
 
     let strategies = null;
+    let flowseal_source = null;
+    if (lc(as_string(mode)) == "flowseal") {
+        let imported = flowseal_import.load(true);
+        if (imported && type(imported.strategies) == "array" && length(imported.strategies) > 0) {
+            strategies = imported.strategies;
+            flowseal_source = {
+                url: imported.source_url || "",
+                ref: imported.source_ref || "",
+                imported_at: imported.imported_at || 0,
+                count: length(strategies)
+            };
+        }
+    }
     if (custom_file && custom_file != "" && fs.stat(custom_file) != null) {
         strategies = common.read_json_file(custom_file);
     }
     if (!strategies || type(strategies) != "array" || length(strategies) == 0) {
         strategies = get_strategies_for_engine(engine, mode);
+        if (lc(as_string(mode)) == "flowseal") {
+            flowseal_source = {
+                url: "builtin",
+                ref: "fallback",
+                imported_at: 0,
+                count: length(strategies)
+            };
+        }
     }
+    state.flowseal_source = flowseal_source;
+    save_fuzzer_state(state);
 
     // Rerank strategies based on detected DPI type
     strategies = rerank_strategies_by_dpi(strategies, dpi_detection);
@@ -2691,6 +2789,7 @@ function run_fuzzer_worker(engine, target, custom_url, rule_section, custom_file
                 id: strat.id || sprintf("strat_%d", i + 1),
                 name: strat.name || sprintf("Strategy %d", i + 1),
                 engine: strat.engine || engine,
+                voice: strat.voice === true,
                 args: strat.args,
                 description: strat.description || "",
                 rationale: strat.rationale || "",
@@ -2701,6 +2800,8 @@ function run_fuzzer_worker(engine, target, custom_url, rule_section, custom_file
                 speed_kbps: probe.speed_kbps,
                 data_bytes: probe.data_bytes || 0,
                 data_verified: probe.data_verified || false,
+                passed_checks: probe.passed_checks || (probe.success ? 1 : 0),
+                total_checks: probe.total_checks || 1,
                 dpi_verdict: probe.dpi_verdict || "unknown",
                 score: probe.score,
                 error: probe.error,
@@ -2958,6 +3059,19 @@ function clear_history() {
     print(sprintf("%J\n", { success: true, message: "Fuzzer history cleared" }));
 }
 
+function flowseal_update() {
+    let imported = flowseal_import.load(true);
+    let strategies = imported && type(imported.strategies) == "array" ? imported.strategies : [];
+    print(sprintf("%J\n", {
+        success: length(strategies) > 0,
+        source_url: imported.source_url || "",
+        source_ref: imported.source_ref || "",
+        imported_at: imported.imported_at || 0,
+        count: length(strategies),
+        strategies: strategies
+    }));
+}
+
 // CLI Dispatcher
 let op = ARGV[0] || "status";
 
@@ -2990,6 +3104,8 @@ if (op == "start") {
     print(sprintf("%J\n", { success: true, entries: entries }));
 } else if (op == "clear_history") {
     clear_history();
+} else if (op == "flowseal_update") {
+    flowseal_update();
 } else if (op == "generate" || op == "strategies_generate") {
     print(sprintf("%J\n", get_strategies_for_engine(ARGV[1], ARGV[2] || "combinatorial")));
 } else if (op == "strategies") {
@@ -3001,9 +3117,9 @@ if (op == "start") {
         zapret2: get_strategies_for_engine("zapret2", strat_mode),
         zapret: get_strategies_for_engine("zapret", strat_mode),
         byedpi: get_strategies_for_engine("byedpi", strat_mode),
-        flowseal: strat_mode == "presets" ? STRATEGIES_FLOWSEAL : []
+        flowseal: strat_mode == "presets" || strat_mode == "flowseal" ? STRATEGIES_FLOWSEAL : []
     }));
 } else {
-    warn("Usage: fuzzer.uc [start|status|stop|apply|strategies|generate|get_patterns|save_patterns|reset_patterns|ai_synthesize|detect_dpi|auto_apply|history|clear_history|worker] ...\n");
+    warn("Usage: fuzzer.uc [start|status|stop|apply|strategies|flowseal_update|generate|get_patterns|save_patterns|reset_patterns|ai_synthesize|detect_dpi|auto_apply|history|clear_history|worker] ...\n");
     exit(1);
 }
