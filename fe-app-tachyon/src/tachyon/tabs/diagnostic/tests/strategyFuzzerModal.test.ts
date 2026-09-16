@@ -133,6 +133,13 @@ describe('renderStrategyFuzzerModal', () => {
     );
   });
 
+  it('offers the Flowseal source import and dedicated DPI suite', () => {
+    renderStrategyFuzzerModal(['youtube_rule']);
+    const rendered = JSON.stringify(mocks.showModal.mock.calls[0][1]);
+    expect(rendered).toContain('flowseal_dpi_suite');
+    expect(rendered).toContain('Flowseal');
+  });
+
   it('handles fuzzer status with successful probe results and best badge', async () => {
     vi.spyOn(TachyonShellMethods, 'getFuzzerStatus').mockResolvedValue({
       success: true,

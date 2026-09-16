@@ -40,6 +40,27 @@ function unsupported_token(token) {
         index(token, "--ipset-exclude=") == 0;
 }
 
+function safe_flowseal_token(token) {
+    token = trim_token(token);
+    if (token == "") return true;
+    // A downloaded BAT is data, never a shell fragment.  Reject separators,
+    // substitutions, redirections and command syntax before any runtime use.
+    if (match(token, /[;&|`$<>\n\r]/) != null) return false;
+    if (index(token, "\\") >= 0 && index(token, "\\\\") >= 0) return false;
+    return match(token, /^--[a-z0-9][a-z0-9-]*(=[a-zA-Z0-9_.,:+%\/=~-]+)?$/) != null;
+}
+
+function validate_imported_line(args) {
+    try {
+        let validator = require("providers.zapret.validator");
+        let result = validator.validate_strategy("nfqws", args, "");
+        return result != null && result.valid == true;
+    } catch (e) {
+        // Import must fail closed when the common validator is unavailable.
+        return false;
+    }
+}
+
 function normalize_line(line) {
     line = trim(as_string(line));
     if (line == "" || substr(line, 0, 2) == "::" || substr(line, 0, 1) == ":")
@@ -51,7 +72,7 @@ function normalize_line(line) {
     let output = [];
     for (let token in tokens) {
         token = trim_token(token);
-        if (token == "" || unsupported_token(token))
+        if (token == "" || unsupported_token(token) || !safe_flowseal_token(token))
             continue;
         token = replace(token, "%BIN%", FLOWSEAL_FAKE_DIR + "/");
         token = replace(token, "%GameFilterTCP%", "80,443,2053,2083,2087,2096,8443");
@@ -61,6 +82,8 @@ function normalize_line(line) {
             token = replace(token, "\\", "/");
         push(output, token);
     }
+    if (length(output) == 0 || length(output) != length(tokens))
+        return "";
     return join(" ", output);
 }
 
@@ -94,6 +117,10 @@ function parse_file(path) {
     let args = parse_bat(path);
     if (length(args) == 0)
         return null;
+    for (let line in args) {
+        if (!validate_imported_line(line))
+            return null;
+    }
     return {
         id: "flowseal_import_" + slug(name),
         name: "Flowseal " + name,
@@ -126,12 +153,15 @@ function import_flowseal(refresh) {
     shell_command("rm -rf " + common.shell_quote(base));
 
     let download = "curl -fsSL --connect-timeout 10 -m 90 -o " + common.shell_quote(zip) + " " + common.shell_quote(FLOWSEAL_STRATEGIES_ZIP);
-    if (!shell_command(download) || !file_nonempty(zip))
+    let download_ok = shell_command(download) && file_nonempty(zip);
+    if (!download_ok) {
         download = "wget -q -O " + common.shell_quote(zip) + " --timeout=90 " + common.shell_quote(FLOWSEAL_STRATEGIES_ZIP);
-    if (!shell_command(download) || !file_nonempty(zip))
-        return cached();
+        download_ok = shell_command(download) && file_nonempty(zip);
+    }
+    if (!download_ok)
+        return { success: false, error: "Flowseal archive download failed", fallback: cached() };
     if (!shell_command("unzip -oq " + common.shell_quote(zip) + " -d " + common.shell_quote(FLOWSEAL_WORK_DIR)))
-        return cached();
+        return { success: false, error: "Flowseal archive extraction failed", fallback: cached() };
 
     let files = common.command_output("find " + common.shell_quote(base) + " -type f -name 'general*.bat' ! -name 'general (ALT5).bat' -print");
     let strategies = [];
@@ -139,26 +169,45 @@ function import_flowseal(refresh) {
         path = trim(path);
         if (path == "") continue;
         let parsed = parse_file(path);
-        if (parsed != null)
-            push(strategies, parsed);
+        push(strategies, parsed != null ? parsed : {
+            id: "flowseal_rejected_" + slug(file_name(path)),
+            name: "Flowseal " + file_name(path),
+            engine: "zapret",
+            source: path,
+            compatible: false,
+            rejection_reason: "Unsupported, unsafe or invalid strategy arguments"
+        });
     }
     if (length(strategies) == 0)
-        return cached();
+        return { success: false, error: "No Flowseal strategy candidates found", fallback: cached() };
 
     let result = {
         source_url: FLOWSEAL_STRATEGIES_ZIP,
         source_ref: "main",
         imported_at: time(),
-        strategies: strategies
+        strategies: strategies,
+        success: true,
+        fallback: null
     };
     common.ensure_dir("/etc/tachyon");
-    common.write_json_file(FLOWSEAL_CACHE, result);
+    if (!common.write_json_file(FLOWSEAL_CACHE, result))
+        return { success: false, error: "Failed to save Flowseal strategy cache", fallback: result };
     return result;
 }
 
 function load(refresh) {
     let result = import_flowseal(refresh === true);
-    return result == null ? { source_url: "fallback", source_ref: "builtin", strategies: [] } : result;
+    if (result != null && result.success === false) {
+        let fallback = result.fallback;
+        if (fallback != null) {
+            fallback.success = false;
+            fallback.error = result.error;
+            fallback.fallback = true;
+            return fallback;
+        }
+        return result;
+    }
+    return result == null ? { source_url: "fallback", source_ref: "builtin", strategies: [], success: false, error: "Flowseal import unavailable" } : result;
 }
 
 return {

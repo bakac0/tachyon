@@ -186,6 +186,21 @@ export function renderStrategyFuzzerModal(ruleNames: string[] = []) {
       ),
       E(
         'option',
+        { value: 'discord_voice_suite' },
+        _('🎙️ Flowseal Discord Voice readiness'),
+      ),
+      E(
+        'option',
+        { value: 'flowseal_dpi_suite' },
+        _('🧪 Flowseal DPI (64 KiB POST / TLS variants)'),
+      ),
+      E(
+        'option',
+        { value: 'flowseal_standard_suite' },
+        _('🌐 Flowseal Standard (HEAD / TLS variants / ping)'),
+      ),
+      E(
+        'option',
         { value: 'twitch_suite' },
         _('🟣 Twitch Suite (Live Stream + HLS CDN)'),
       ),
@@ -257,6 +272,11 @@ export function renderStrategyFuzzerModal(ruleNames: string[] = []) {
         'option',
         { value: 'combinatorial' },
         _('🔍 Combinatorial Deep Fuzzing (~150-300+)'),
+      ),
+      E(
+        'option',
+        { value: 'flowseal' },
+        _('🛡️ Flowseal imported strategies + upstream checks'),
       ),
       E('option', { value: 'custom' }, _('🛠️ My Custom Strategies Only')),
     ],
@@ -1619,6 +1639,13 @@ export function renderStrategyFuzzerModal(ruleNames: string[] = []) {
                 '⚠️ Benchmark completed. No working bypass found for this target.',
               );
         }
+      }
+      if (state.flowseal_source) {
+        const source = state.flowseal_source;
+        const label = source.fallback
+          ? _('Flowseal fallback catalog')
+          : `${_('Flowseal source')}: ${source.ref || 'main'}`;
+        statusText.innerText += ` ${label}${source.error ? ` — ${source.error}` : ''}`;
       }
     }
 

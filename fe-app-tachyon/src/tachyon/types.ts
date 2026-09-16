@@ -1030,6 +1030,9 @@ export namespace Tachyon {
     | 'youtube'
     | 'youtube_web'
     | 'discord_suite'
+    | 'discord_voice_suite'
+    | 'flowseal_dpi_suite'
+    | 'flowseal_standard_suite'
     | 'discord'
     | 'twitch_suite'
     | 'twitter_suite'
@@ -1043,7 +1046,7 @@ export namespace Tachyon {
     | 'quic_http3'
     | 'custom';
 
-  export type FuzzerMode = 'presets' | 'combinatorial' | 'custom';
+  export type FuzzerMode = 'presets' | 'combinatorial' | 'flowseal' | 'custom';
 
   export interface FuzzerStrategyItem {
     id: string;
@@ -1052,6 +1055,8 @@ export namespace Tachyon {
     args: string;
     description: string;
     rationale?: string;
+    compatible?: boolean;
+    rejection_reason?: string;
   }
 
   export type FuzzerStrategyDefinition = FuzzerStrategyItem;
@@ -1087,6 +1092,9 @@ export namespace Tachyon {
     dpi_verdict?: string;
     score: number;
     error?: string;
+    passed_checks?: number;
+    total_checks?: number;
+    voice_profile_ready?: boolean | null;
     badge?: string;
     sub_probes?: Array<{
       target_name: string;
@@ -1123,6 +1131,14 @@ export namespace Tachyon {
     started_at: number;
     finished_at: number;
     dpi_detection?: FuzzerDpiDetection | null;
+    flowseal_source?: {
+      url?: string;
+      ref?: string;
+      count?: number;
+      success?: boolean;
+      fallback?: boolean;
+      error?: string;
+    } | null;
   }
 
   export interface FuzzerStartResponse {
@@ -1232,6 +1248,14 @@ export namespace Tachyon {
     total_tested: number;
     working_count: number;
     dpi_detection: FuzzerDpiDetection | null;
+    flowseal_source?: {
+      url?: string;
+      ref?: string;
+      count?: number;
+      success?: boolean;
+      fallback?: boolean;
+      error?: string;
+    } | null;
     duration_sec: number;
   }
 

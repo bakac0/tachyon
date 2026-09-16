@@ -338,6 +338,36 @@ function resolve_flowseal_fake_files(args_str) {
     return replace_all_literal(args_str, FLOWSEAL_FAKE_DIR, "/opt/zapret/files/fake");
 }
 
+function flowseal_prepare_assets(strategies) {
+    let base = getenv("ZAPRET_PROVIDER_FILES_DIR") ? getenv("ZAPRET_PROVIDER_FILES_DIR") + "/fake" : "/opt/zapret/files/fake";
+    if (!common.ensure_dir(base)) return { ready: false, error: "Cannot create Flowseal fake directory" };
+    let names = [];
+    for (let strategy in strategies) {
+        let rest = as_string(strategy.args || "");
+        while (true) {
+            let found = match(rest, /FLOWSEAL_FAKE_DIR\/([^ \t]+)/);
+            if (!found || !found[1]) break;
+            let name = found[1];
+            if (index(names, name) < 0) push(names, name);
+            rest = substr(rest, index(rest, name) + length(name));
+        }
+    }
+    for (let name in names) {
+        let target = base + "/" + name;
+        let st = fs.stat(target);
+        if (st && int(st.size || 0) > 0) continue;
+        let url = "https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/main/bin/" + name;
+        let cmd = "curl -fsSL --connect-timeout 10 -m 60 -o " + shell_quote(target) + " " + shell_quote(url);
+        let ok = common.command_success(cmd) && fs.stat(target) != null && int(fs.stat(target).size || 0) > 0;
+        if (!ok) {
+            cmd = "wget -q -O " + shell_quote(target) + " --timeout=60 " + shell_quote(url);
+            ok = common.command_success(cmd) && fs.stat(target) != null && int(fs.stat(target).size || 0) > 0;
+        }
+        if (!ok) return { ready: false, error: "Failed to download Flowseal fake asset " + name };
+    }
+    return { ready: true, directory: base, count: length(names) };
+}
+
 function setup_fuzzer_direct_nftables(qnum, is_udp) {
     system("nft add table inet tachyon_fuzzer 2>/dev/null");
     system("nft 'add chain inet tachyon_fuzzer output { type filter hook output priority -200 ; policy accept; }' 2>/dev/null");
@@ -378,7 +408,21 @@ function validate_strategy_args(engine, args_val) {
             return res ? res.valid == true : true;
         }
     } catch (e) {
-        return true;
+        return false;
+    }
+    return true;
+}
+
+function flowseal_score(passed, total, ttfb, speed, verified) {
+    total = max(1, int(total));
+    let coverage = int((double(passed) / double(total)) * 100000.0);
+    return coverage + max(0, 1000 - int(ttfb)) + int(speed / 10.0) + (verified ? 50 : 0);
+}
+
+function strategy_args_safe(args_val) {
+    for (let token in split(trim(as_string(args_val)), /[ \t]+/)) {
+        if (match(token, /[;&|`$<>\n\r]/) != null)
+            return false;
     }
     return true;
 }
@@ -483,6 +527,21 @@ const TARGET_SUITES = {
             { name: "Google DNS 8.8.8.8", ping: "8.8.8.8", weight: 0 },
             { name: "Google DNS 8.8.4.4", ping: "8.8.4.4", weight: 0 },
             { name: "Quad9 DNS 9.9.9.9", ping: "9.9.9.9", weight: 0 }
+        ]
+    },
+    flowseal_standard_suite: {
+        name: "Flowseal Standard (HEAD + TLS variants + host ping)",
+        flowseal_standard: true,
+        urls: [
+            { name: "Discord", url: "https://discord.com" },
+            { name: "Discord Gateway", url: "https://gateway.discord.gg" },
+            { name: "Discord CDN", url: "https://cdn.discordapp.com" },
+            { name: "YouTube", url: "https://www.youtube.com" },
+            { name: "Google", url: "https://www.google.com" },
+            { name: "Cloudflare", url: "https://www.cloudflare.com" },
+            { name: "Cloudflare DNS", ping: "1.1.1.1" },
+            { name: "Google DNS", ping: "8.8.8.8" },
+            { name: "Quad9 DNS", ping: "9.9.9.9" }
         ]
     },
     flowseal_dpi_suite: {
@@ -1739,6 +1798,7 @@ function voice_probe(args_str) {
         return probe;
     }
     probe.success = true;
+    probe.readiness = true;
     probe.data_verified = true;
     probe.dpi_verdict = "voice_profile_ready";
     probe.score = 100;
@@ -2425,6 +2485,63 @@ const DPI_CHECK_PROTOCOLS = [
     { label: "TLS1.3", args: "--tlsv1.3 --tls-max 1.3" }
 ];
 const DPI_SUITE_URL = "https://hyperion-cs.github.io/dpi-checkers/ru/tcp-16-20/suite.v2.json";
+const FLOWSEAL_STANDARD_PROTOCOLS = [
+    { label: "HTTP/1.1", args: "--http1.1" },
+    { label: "TLS1.2", args: "--tlsv1.2 --tls-max 1.2" },
+    { label: "TLS1.3", args: "--tlsv1.3 --tls-max 1.3" }
+];
+
+function run_flowseal_standard_probe(urls_list, timeout_seconds) {
+    let result = { success: false, passed_checks: 0, total_checks: 0, score: 0,
+        http_code: 0, handshake_ms: 0, ttfb_ms: 0, speed_kbps: 0,
+        data_bytes: 0, data_verified: false, error: "", sub_probes: [] };
+    let first_error = "";
+    for (let target in urls_list) {
+        if (target.ping) {
+            result.total_checks++;
+            let ok = system(sprintf("ping -c 1 -W 1 %s >/dev/null 2>&1", shell_quote(target.ping))) == 0;
+            if (ok) result.passed_checks++;
+            push(result.sub_probes, { target_name: target.name, url: "PING:" + target.ping,
+                test_label: "PING", success: ok, http_code: 0, handshake_ms: 0,
+                ttfb_ms: 0, speed_kbps: 0, data_bytes: 0, data_verified: false,
+                error: ok ? "" : "Ping failed" });
+            continue;
+        }
+        for (let protocol in FLOWSEAL_STANDARD_PROTOCOLS) {
+            result.total_checks++;
+            let cmd = wrap_cmd_timeout(sprintf(
+                "curl -sS -I -m %d --connect-timeout 2 -o /dev/null -w '%%{http_code} %%{time_total}' %s %s 2>&1; printf ' %%d\\n' $?",
+                timeout_seconds, protocol.args, shell_quote(target.url)), timeout_seconds + 2);
+            let pipe = fs.popen(cmd, "r");
+            let output = pipe ? trim(as_string(pipe.read("all"))) : "";
+            if (pipe) pipe.close();
+            let parts = split(output, /[ \t\r\n]+/);
+            let code = length(parts) > 0 ? int(parts[0]) : 0;
+            let exit_code = length(parts) > 2 ? int(parts[length(parts) - 1]) : 1;
+            let ok = exit_code == 0;
+            if (ok) result.passed_checks++;
+            if (!ok && first_error == "") first_error = output;
+            push(result.sub_probes, { target_name: target.name, url: target.url,
+                test_label: protocol.label, success: ok, http_code: code,
+                handshake_ms: 0, ttfb_ms: 0, speed_kbps: 0, data_bytes: 0,
+                data_verified: false, curl_exit_code: exit_code, error: ok ? "" : output });
+        }
+        let host = match(as_string(target.url), /https?:\/\/([^/]+)/);
+        if (host && host[1]) {
+            let ok = system(sprintf("ping -c 1 -W 1 %s >/dev/null 2>&1", shell_quote(host[1]))) == 0;
+            result.total_checks++;
+            if (ok) result.passed_checks++;
+            push(result.sub_probes, { target_name: target.name, url: "PING:" + host[1],
+                test_label: "PING", success: ok, http_code: 0, handshake_ms: 0,
+                ttfb_ms: 0, speed_kbps: 0, data_bytes: 0, data_verified: false,
+                error: ok ? "" : "Ping failed" });
+        }
+    }
+    result.success = result.passed_checks > 0;
+    result.score = flowseal_score(result.passed_checks, result.total_checks, 0, 0, false);
+    result.error = first_error;
+    return result;
+}
 
 function load_dpi_checker_targets(fallback) {
     let raw = common.command_output("curl -fsSL --connect-timeout 5 -m 15 " + shell_quote(DPI_SUITE_URL));
@@ -2470,14 +2587,21 @@ function dpi_metric_result(output) {
     result.download_bytes = int(parts[2]);
     result.total_time = double(parts[3]);
     result.exit_code = int(parts[4]);
+    result.curl_exit_code = result.exit_code;
 
-    let unsupported = result.exit_code == 35 ||
-        index(lc(as_string(output)), "not supported") >= 0 ||
+    let unsupported_message = index(lc(as_string(output)), "not supported") >= 0 ||
         index(lc(as_string(output)), "unsupported") >= 0;
+    let unsupported = unsupported_message;
     if (unsupported) {
         result.status = "UNSUPPORTED";
         result.dpi_verdict = "unsupported";
         result.error = "curl protocol variant is unsupported";
+        result.unsupported_heuristic = false;
+    } else if (result.exit_code == 35) {
+        result.status = "TLS_ERROR";
+        result.dpi_verdict = "tls_error";
+        result.error = "curl TLS handshake failed (exit 35)";
+        result.unsupported_heuristic = true;
     } else if (result.exit_code == 0 && match(result.code, /^[2-5][0-9][0-9]$/)) {
         result.status = "OK";
         result.dpi_verdict = "available";
@@ -2560,7 +2684,7 @@ function run_dpi_suite_probe(urls_list, target_key, timeout_seconds, range_bytes
     result.speed_kbps = max_speed;
     result.data_verified = result.passed_checks == result.total_checks;
     result.success = result.passed_checks > 0;
-    result.score = result.passed_checks * 100000 + max_speed;
+    result.score = flowseal_score(result.passed_checks, result.total_checks, 0, max_speed, result.data_verified);
     result.error = first_error;
     return result;
 }
@@ -2584,6 +2708,13 @@ function run_probe(engine, args_str, target_key, custom_url) {
             score: 0,
             error: "Flowseal fake asset path was not resolved",
             sub_probes: []
+        };
+    }
+    if (!strategy_args_safe(args_str) || (trim(as_string(args_str)) != "" && !validate_strategy_args(engine, args_str))) {
+        return {
+            success: false, http_code: 0, handshake_ms: 0, ttfb_ms: 0,
+            speed_kbps: 0, data_bytes: 0, data_verified: false, score: 0,
+            error: "Strategy arguments failed validation", sub_probes: []
         };
     }
     
@@ -2720,7 +2851,7 @@ function run_probe(engine, args_str, target_key, custom_url) {
             result.data_bytes = int(sum_data_bytes / double(total_urls));
             result.data_verified = all_data_verified;
             result.dpi_verdict = all_data_verified ? "verified_32k" : last_dpi_verdict;
-            result.score = 100 + max(0, 1000 - result.ttfb_ms) + int(result.speed_kbps / 10.0) + (result.data_verified ? 50 : 20);
+            result.score = flowseal_score(passed_count, http_url_count, result.ttfb_ms, result.speed_kbps, result.data_verified);
             result.error = "";
         } else {
             result.success = false;
@@ -2822,6 +2953,11 @@ function run_probe(engine, args_str, target_key, custom_url) {
         setup_fuzzer_direct_nftables(qnum, is_udp);
 
         let selected_suite = TARGET_SUITES[target_key];
+        if (selected_suite && selected_suite.flowseal_standard === true) {
+            let standard_result = run_flowseal_standard_probe(urls_list, 4);
+            cleanup_temp_daemons();
+            return standard_result;
+        }
         if (selected_suite && selected_suite.dpi === true) {
             let dpi_result = run_dpi_suite_probe(
                 urls_list,
@@ -2892,17 +3028,17 @@ function run_probe(engine, args_str, target_key, custom_url) {
         if (voice_enabled && is_discord_voice_strategy(args_str)) {
             let voice_result = voice_probe(args_str);
             push(result.sub_probes, voice_result);
-            if (voice_result.success)
-                passed_count++;
-            else if (result.error == "")
+            result.voice_profile_ready = voice_result.success;
+            if (!voice_result.success && result.error == "")
                 result.error = voice_result.error;
         }
         
         cleanup_temp_daemons();
         
-        let total_checks = http_url_count + ((voice_enabled && is_discord_voice_strategy(args_str)) ? 1 : 0);
+        let total_checks = http_url_count;
         result.passed_checks = passed_count;
         result.total_checks = total_checks;
+        result.voice_profile_ready = voice_enabled && is_discord_voice_strategy(args_str) ? result.voice_profile_ready === true : null;
         if (passed_count > 0) {
             result.success = true;
             result.http_code = last_http > 0 ? last_http : 200;
@@ -2914,7 +3050,7 @@ function run_probe(engine, args_str, target_key, custom_url) {
             result.dpi_verdict = result.data_verified ? "verified_32k" : last_dpi_verdict;
             // Passed-check count dominates performance so a 3/4 strategy
             // beats a 2/3 strategy; latency and throughput break ties.
-            result.score = passed_count * 100000 + max(0, 1000 - result.ttfb_ms) + int(result.speed_kbps / 10.0) + (result.data_verified ? 50 : 20);
+            result.score = flowseal_score(passed_count, total_checks, result.ttfb_ms, result.speed_kbps, result.data_verified);
         } else {
             result.success = false;
             result.http_code = last_http;
@@ -2977,7 +3113,10 @@ function run_fuzzer_worker(engine, target, custom_url, rule_section, custom_file
                 url: imported.source_url || "",
                 ref: imported.source_ref || "",
                 imported_at: imported.imported_at || 0,
-                count: length(strategies)
+                count: length(strategies),
+                success: imported.success !== false,
+                error: imported.error || "",
+                fallback: imported.fallback === true
             };
         }
     }
@@ -2996,6 +3135,9 @@ function run_fuzzer_worker(engine, target, custom_url, rule_section, custom_file
         }
     }
     state.flowseal_source = flowseal_source;
+    if (lc(as_string(mode)) == "flowseal") {
+        state.flowseal_assets = flowseal_prepare_assets(strategies);
+    }
     save_fuzzer_state(state);
 
     // Rerank strategies based on detected DPI type
@@ -3016,6 +3158,23 @@ function run_fuzzer_worker(engine, target, custom_url, rule_section, custom_file
             state.current_strategy = strat;
             state.progress_pct = int(((i) / double(total)) * 100.0);
             save_fuzzer_state(state);
+            if (strat.compatible === false) {
+                push(state.results, {
+                    id: strat.id || sprintf("strat_%d", i + 1),
+                    name: strat.name || sprintf("Strategy %d", i + 1),
+                    engine: strat.engine || engine,
+                    args: strat.args || "",
+                    success: false,
+                    passed_checks: 0,
+                    total_checks: 0,
+                    score: 0,
+                    error: strat.rejection_reason || "Strategy rejected during import",
+                    sub_probes: []
+                });
+                state.progress_pct = int(((i + 1) / double(total)) * 100.0);
+                save_fuzzer_state(state);
+                continue;
+            }
             let probe = null;
             try {
                 probe = run_probe(strat.engine || engine, strat.args, target, custom_url);
@@ -3314,11 +3473,13 @@ function flowseal_update() {
     let imported = flowseal_import.load(true);
     let strategies = imported && type(imported.strategies) == "array" ? imported.strategies : [];
     print(sprintf("%J\n", {
-        success: length(strategies) > 0,
+        success: imported != null && imported.success === true && length(strategies) > 0,
         source_url: imported.source_url || "",
         source_ref: imported.source_ref || "",
         imported_at: imported.imported_at || 0,
         count: length(strategies),
+        error: imported.error || "",
+        fallback: imported.fallback === true,
         strategies: strategies
     }));
 }
