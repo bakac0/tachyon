@@ -51,6 +51,18 @@ if (!val.target_suites || !val.target_suites.discord_voice_suite) {
   console.error("Missing Discord voice target suite");
   process.exit(1);
 }
+if (val.target_suites.discord_voice_suite.urls.length < 17) {
+  console.error("Flowseal target suite is missing upstream targets");
+  process.exit(1);
+}
+if (!val.target_suites.flowseal_dpi_suite || val.target_suites.flowseal_dpi_suite.dpi !== true) {
+  console.error("Missing Flowseal DPI checker suite");
+  process.exit(1);
+}
+if (val.target_suites.flowseal_dpi_suite.dpi_range_bytes !== 65536) {
+  console.error("Flowseal DPI suite must use a 64 KiB payload");
+  process.exit(1);
+}
 const voice = val.flowseal.filter((s) => s.voice === true);
 if (voice.length < 3) {
   console.error("Missing Flowseal Discord voice fake matrix");
@@ -183,6 +195,10 @@ grep -q 'function replace_all_literal' "$FUZZER" || fail "fuzzer must replace ev
 grep -q 'function flowseal_fake_dir_ready' "$FUZZER" || fail "fuzzer must select a fake directory containing required assets"
 grep -q 'Flowseal fake asset path was not resolved' "$FUZZER" || fail "fuzzer must reject unresolved Flowseal fake paths"
 grep -q 'const FLOWSEAL_FAKE_DIR = "FLOWSEAL_FAKE_DIR";' "$FUZZER" || fail "Flowseal fake marker must be initialized before resolver functions"
+grep -q 'likely_blocked_16_20k' "$FUZZER" || fail "fuzzer must classify the 16-20KB freeze pattern"
+grep -q 'upload_bytes' "$FUZZER" || fail "fuzzer must expose DPI upload bytes"
+grep -q 'dpi_range_bytes' "$FUZZER" || fail "fuzzer must expose DPI test range"
+grep -q 'DPI_SUITE_URL' "$FUZZER" || fail "fuzzer must load the upstream DPI checker suite"
 grep -q 'voice_profile_ready' "$FUZZER" || fail "voice probe must use a typed readiness verdict"
 grep -q 'flowseal_source' "$FUZZER" || fail "fuzzer status must expose Flowseal import source"
 if grep -q 'udp://discord-voice' "$FUZZER"; then fail "voice probe must not expose a fake UDP URL"; fi

@@ -213,6 +213,7 @@ Watchdog — сердце стабильности Tachyon, работающее
 tachyon fuzzer_start zapret2 youtube_suite      # Запуск бенчмарка для YouTube на Zapret2
 tachyon fuzzer_start zapret2 discord_suite      # Запуск бенчмарка для Discord (голос + UDP)
 tachyon fuzzer_start zapret discord_voice_suite "" "" "" flowseal # Подбор Flowseal fake + Discord Voice
+tachyon fuzzer_start zapret flowseal_dpi_suite "" "" "" flowseal # DPI-проверка Flowseal: 64 KiB POST + HTTP/TLS 1.2/1.3
 tachyon fuzzer_flowseal_update                  # Скачать и импортировать актуальные general*.bat Flowseal
 tachyon fuzzer_status                           # Текущий прогресс и результаты фаззера (JSON)
 tachyon fuzzer_stop                             # Немедленная остановка фаззера и очистка Netfilter

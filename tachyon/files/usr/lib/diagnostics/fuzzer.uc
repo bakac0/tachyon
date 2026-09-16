@@ -463,12 +463,45 @@ const TARGET_SUITES = {
         ]
     },
     discord_voice_suite: {
-        name: "Discord Voice (UDP profile readiness + API)",
+        name: "Flowseal Targets (Discord + YouTube + Google + Cloudflare + Voice)",
         voice: true,
         urls: [
-            { name: "API Gateway", url: "https://discord.com/api/v9/gateway", weight: 35 },
-            { name: "Global Assets CDN", url: "https://cdn.discordapp.com/generate_204", weight: 25 },
-            { name: "Discord Web Portal", url: "https://discord.com/login", weight: 20 }
+            { name: "Discord Main", url: "https://discord.com", weight: 12 },
+            { name: "Discord Gateway", url: "https://gateway.discord.gg", weight: 10 },
+            { name: "Discord CDN", url: "https://cdn.discordapp.com", weight: 10 },
+            { name: "Discord Updates", url: "https://updates.discord.com", weight: 6 },
+            { name: "YouTube Web", url: "https://www.youtube.com", weight: 12 },
+            { name: "YouTube Short", url: "https://youtu.be", weight: 8 },
+            { name: "YouTube Image", url: "https://i.ytimg.com", weight: 8 },
+            { name: "YouTube Video Redirect", url: "https://redirector.googlevideo.com", weight: 10 },
+            { name: "Google Main", url: "https://www.google.com", weight: 8 },
+            { name: "Google Gstatic", url: "https://www.gstatic.com", weight: 6 },
+            { name: "Cloudflare Web", url: "https://www.cloudflare.com", weight: 5 },
+            { name: "Cloudflare CDN", url: "https://cdnjs.cloudflare.com", weight: 5 },
+            { name: "Cloudflare DNS 1.1.1.1", ping: "1.1.1.1", weight: 0 },
+            { name: "Cloudflare DNS 1.0.0.1", ping: "1.0.0.1", weight: 0 },
+            { name: "Google DNS 8.8.8.8", ping: "8.8.8.8", weight: 0 },
+            { name: "Google DNS 8.8.4.4", ping: "8.8.4.4", weight: 0 },
+            { name: "Quad9 DNS 9.9.9.9", ping: "9.9.9.9", weight: 0 }
+        ]
+    },
+    flowseal_dpi_suite: {
+        name: "Flowseal DPI Checker (64 KiB POST)",
+        dpi: true,
+        dpi_range_bytes: 65536,
+        urls: [
+            { name: "Discord Main", url: "https://discord.com", weight: 12 },
+            { name: "Discord Gateway", url: "https://gateway.discord.gg", weight: 10 },
+            { name: "Discord CDN", url: "https://cdn.discordapp.com", weight: 10 },
+            { name: "Discord Updates", url: "https://updates.discord.com", weight: 6 },
+            { name: "YouTube Web", url: "https://www.youtube.com", weight: 12 },
+            { name: "YouTube Short", url: "https://youtu.be", weight: 8 },
+            { name: "YouTube Image", url: "https://i.ytimg.com", weight: 8 },
+            { name: "YouTube Video Redirect", url: "https://redirector.googlevideo.com", weight: 10 },
+            { name: "Google Main", url: "https://www.google.com", weight: 8 },
+            { name: "Google Gstatic", url: "https://www.gstatic.com", weight: 6 },
+            { name: "Cloudflare Web", url: "https://www.cloudflare.com", weight: 5 },
+            { name: "Cloudflare CDN", url: "https://cdnjs.cloudflare.com", weight: 5 }
         ]
     },
     twitch_suite: {
@@ -1649,6 +1682,9 @@ function get_strategies_for_engine(engine, mode) {
 function resolve_target_url(target_key, custom_url) {
     if (custom_url && custom_url != "")
         return custom_url;
+    let suite = TARGET_SUITES[target_key];
+    if (suite && suite.urls && length(suite.urls) > 0)
+        return suite.urls[0].url;
     return TARGET_URLS[target_key] || TARGET_URLS.youtube;
 }
 
@@ -2087,9 +2123,12 @@ function parse_curl_output(output, result) {
     let http_code = int(parts[0]);
     let appconnect = double(parts[1]);
     let starttransfer = double(parts[2]);
-    let speed_bytes = double(parts[3]);
-    let size_download = length(parts) >= 5 ? int(parts[4]) : 0;
-    let exit_code = length(parts) >= 6 ? int(parts[5]) : 0;
+    let total_time = double(parts[3]);
+    let speed_bytes = length(parts) >= 5 ? double(parts[4]) : 0;
+    let size_download = length(parts) >= 6 ? int(parts[5]) : 0;
+    let exit_code = length(parts) >= 7 ? int(parts[6]) : 0;
+    if (speed_bytes <= 0 && total_time > 0 && size_download > 0)
+        speed_bytes = double(size_download) / total_time;
     
     result.http_code = http_code;
     result.handshake_ms = int(appconnect * 1000.0);
@@ -2184,7 +2223,7 @@ function detect_dpi_type(target_key, custom_url) {
 
     let curl_cmd = wrap_cmd_timeout(
         sprintf(
-            "curl %s-so /dev/null -w '%%{http_code}\\t%%{time_appconnect}\\t%%{time_starttransfer}\\t%%{speed_download}\\t%%{size_download}' -L --connect-timeout 4 --max-time 6 %s 2>&1; printf '\\t%%d\\n' $?",
+            "curl %s-so /dev/null -w '%%{http_code}\\t%%{time_appconnect}\\t%%{time_starttransfer}\\t%%{time_total}\\t%%{speed_download}\\t%%{size_download}' -L --connect-timeout 4 --max-time 6 %s 2>&1; printf '\\t%%d\\n' $?",
             target_flags,
             shell_quote(target_url)
         ),
@@ -2380,6 +2419,152 @@ function rerank_strategies_by_dpi(strategies, dpi_type) {
     return result;
 }
 
+const DPI_CHECK_PROTOCOLS = [
+    { label: "HTTP", args: "--http1.1" },
+    { label: "TLS1.2", args: "--tlsv1.2 --tls-max 1.2" },
+    { label: "TLS1.3", args: "--tlsv1.3 --tls-max 1.3" }
+];
+const DPI_SUITE_URL = "https://hyperion-cs.github.io/dpi-checkers/ru/tcp-16-20/suite.v2.json";
+
+function load_dpi_checker_targets(fallback) {
+    let raw = common.command_output("curl -fsSL --connect-timeout 5 -m 15 " + shell_quote(DPI_SUITE_URL));
+    if (!raw || trim(as_string(raw)) == "")
+        return fallback;
+    let parsed = null;
+    try { parsed = json(as_string(raw)); } catch (e) { parsed = null; }
+    if (type(parsed) != "array")
+        return fallback;
+
+    let result = [];
+    for (let entry in parsed) {
+        if (!entry || !entry.host)
+            continue;
+        push(result, {
+            name: (entry.country ? as_string(entry.country) + " " : "") + (entry.provider ? as_string(entry.provider) + " " : "") + as_string(entry.id || entry.host),
+            url: "https://" + as_string(entry.host),
+            provider: entry.provider || "",
+            country: entry.country || "",
+            weight: 1
+        });
+    }
+    return length(result) > 0 ? result : fallback;
+}
+
+function dpi_metric_result(output) {
+    let parts = split(trim(as_string(output)), /[ \t\r\n]+/);
+    let result = {
+        code: "NA",
+        upload_bytes: 0,
+        download_bytes: 0,
+        total_time: -1,
+        exit_code: 1,
+        status: "FAIL",
+        dpi_verdict: "failed",
+        error: "Malformed DPI metrics output"
+    };
+    if (length(parts) < 5)
+        return result;
+
+    result.code = as_string(parts[0]);
+    result.upload_bytes = int(parts[1]);
+    result.download_bytes = int(parts[2]);
+    result.total_time = double(parts[3]);
+    result.exit_code = int(parts[4]);
+
+    let unsupported = result.exit_code == 35 ||
+        index(lc(as_string(output)), "not supported") >= 0 ||
+        index(lc(as_string(output)), "unsupported") >= 0;
+    if (unsupported) {
+        result.status = "UNSUPPORTED";
+        result.dpi_verdict = "unsupported";
+        result.error = "curl protocol variant is unsupported";
+    } else if (result.exit_code == 0 && match(result.code, /^[2-5][0-9][0-9]$/)) {
+        result.status = "OK";
+        result.dpi_verdict = "available";
+        result.error = "";
+    }
+
+    if (result.exit_code != 0 && result.upload_bytes > 0 && result.download_bytes == 0 && result.total_time >= 5) {
+        result.status = "LIKELY_BLOCKED";
+        result.dpi_verdict = "likely_blocked_16_20k";
+        result.error = "Likely DPI freeze after 16-20KB window";
+    }
+    return result;
+}
+
+function run_dpi_suite_probe(urls_list, target_key, timeout_seconds, range_bytes) {
+    urls_list = load_dpi_checker_targets(urls_list);
+    let payload_path = "/tmp/tachyon-fuzzer-dpi-payload.bin";
+    let range_spec = "0-" + as_string(range_bytes - 1);
+    system(sprintf("dd if=/dev/urandom of=%s bs=%d count=1 2>/dev/null", shell_quote(payload_path), range_bytes));
+
+    let result = {
+        success: false,
+        http_code: 0,
+        handshake_ms: 0,
+        ttfb_ms: 0,
+        speed_kbps: 0,
+        data_bytes: 0,
+        data_verified: false,
+        passed_checks: 0,
+        total_checks: length(urls_list) * length(DPI_CHECK_PROTOCOLS),
+        score: 0,
+        error: "",
+        sub_probes: []
+    };
+    let first_error = "";
+    let max_speed = 0;
+    let total_download = 0;
+
+    for (let target_item in urls_list) {
+        let target_flags = get_resolved_host_flags(target_item.url);
+        if (target_flags == "") target_flags = get_fuzzer_curl_dns_flags();
+        for (let protocol in DPI_CHECK_PROTOCOLS) {
+            let curl_cmd = wrap_cmd_timeout(sprintf(
+                "curl %s --range %s -m %d --connect-timeout %d -w '%%{http_code} %%{size_upload} %%{size_download} %%{time_total}' -o /dev/null -X POST --data-binary @%s -s %s %s 2>&1; printf ' %%d\\n' $?",
+                target_flags,
+                range_spec,
+                timeout_seconds,
+                min(3, timeout_seconds),
+                shell_quote(payload_path),
+                protocol.args,
+                shell_quote(target_item.url)
+            ), timeout_seconds + 2);
+            let pipe = fs.popen(curl_cmd, "r");
+            let output = pipe ? pipe.read("all") : "";
+            if (pipe) pipe.close();
+
+            let metric = dpi_metric_result(output);
+            let speed = metric.total_time > 0 ? int(metric.download_bytes / metric.total_time / 1024.0) : 0;
+            if (speed > max_speed) max_speed = speed;
+            total_download += metric.download_bytes;
+            if (metric.status == "OK") result.passed_checks++;
+            if (metric.error != "" && first_error == "") first_error = metric.error;
+            push(result.sub_probes, {
+                target_name: target_item.name,
+                url: target_item.url,
+                test_label: protocol.label,
+                upload_bytes: metric.upload_bytes,
+                download_bytes: metric.download_bytes,
+                total_time_ms: metric.total_time >= 0 ? int(metric.total_time * 1000.0) : 0,
+                speed_kbps: speed,
+                status: metric.status,
+                dpi_verdict: metric.dpi_verdict,
+                error: metric.error
+            });
+        }
+    }
+
+    common.remove_file(payload_path);
+    result.data_bytes = total_download;
+    result.speed_kbps = max_speed;
+    result.data_verified = result.passed_checks == result.total_checks;
+    result.success = result.passed_checks > 0;
+    result.score = result.passed_checks * 100000 + max_speed;
+    result.error = first_error;
+    return result;
+}
+
 function run_probe(engine, args_str, target_key, custom_url) {
     cleanup_temp_daemons();
 
@@ -2404,6 +2589,11 @@ function run_probe(engine, args_str, target_key, custom_url) {
     
     let urls_list = resolve_target_urls_list(target_key, custom_url);
     let total_urls = length(urls_list);
+    let http_url_count = 0;
+    for (let target_item in urls_list) {
+        if (!target_item.ping)
+            http_url_count++;
+    }
     
     let result = {
         success: false,
@@ -2479,9 +2669,14 @@ function run_probe(engine, args_str, target_key, custom_url) {
         let last_dpi_verdict = "available";
         
         for (let target_item in urls_list) {
+            if (target_item.ping) {
+                let ping_ok = system(sprintf("ping -c 1 -W 2 %s >/dev/null 2>&1", shell_quote(target_item.ping))) == 0;
+                push(result.sub_probes, { target_name: target_item.name, url: "PING:" + target_item.ping, ping: true, success: ping_ok, http_code: 0, handshake_ms: 0, ttfb_ms: 0, speed_kbps: 0, data_bytes: 0, data_verified: false, dpi_verdict: ping_ok ? "reachable" : "timeout", error: ping_ok ? "" : "Ping failed" });
+                continue;
+            }
             let curl_cmd = wrap_cmd_timeout(
                 sprintf(
-                    "curl -x socks5h://127.0.0.1:%d -so /dev/null -w '%%{http_code}\\t%%{time_appconnect}\\t%%{time_starttransfer}\\t%%{speed_download}\\t%%{size_download}' -L --connect-timeout 4 --max-time 6 %s 2>/dev/null; printf '\\t%%d\\n' $?",
+            "curl -x socks5h://127.0.0.1:%d -so /dev/null -w '%%{http_code}\\t%%{time_appconnect}\\t%%{time_starttransfer}\\t%%{time_total}\\t%%{speed_download}\\t%%{size_download}' -L --connect-timeout 4 --max-time 6 %s 2>/dev/null; printf '\\t%%d\\n' $?",
                     BYEDPI_PORT,
                     shell_quote(target_item.url)
                 ),
@@ -2516,7 +2711,7 @@ function run_probe(engine, args_str, target_key, custom_url) {
 
         cleanup_temp_daemons();
         
-        if (passed_count == total_urls) {
+        if (passed_count == http_url_count) {
             result.success = true;
             result.http_code = last_http > 0 ? last_http : 200;
             result.handshake_ms = int(sum_handshake / double(total_urls));
@@ -2625,6 +2820,18 @@ function run_probe(engine, args_str, target_key, custom_url) {
         }
         
         setup_fuzzer_direct_nftables(qnum, is_udp);
+
+        let selected_suite = TARGET_SUITES[target_key];
+        if (selected_suite && selected_suite.dpi === true) {
+            let dpi_result = run_dpi_suite_probe(
+                urls_list,
+                target_key,
+                5,
+                int(selected_suite.dpi_range_bytes || 65536)
+            );
+            cleanup_temp_daemons();
+            return dpi_result;
+        }
         
         let passed_count = 0;
         let sum_handshake = 0;
@@ -2638,12 +2845,17 @@ function run_probe(engine, args_str, target_key, custom_url) {
         let passed_http_count = 0;
         
         for (let target_item in urls_list) {
+            if (target_item.ping) {
+                let ping_ok = system(sprintf("ping -c 1 -W 2 %s >/dev/null 2>&1", shell_quote(target_item.ping))) == 0;
+                push(result.sub_probes, { target_name: target_item.name, url: "PING:" + target_item.ping, ping: true, success: ping_ok, http_code: 0, handshake_ms: 0, ttfb_ms: 0, speed_kbps: 0, data_bytes: 0, data_verified: false, dpi_verdict: ping_ok ? "reachable" : "timeout", error: ping_ok ? "" : "Ping failed" });
+                continue;
+            }
             let target_flags = get_resolved_host_flags(target_item.url);
             if (target_flags == "") target_flags = dns_flags;
 
             let curl_cmd = wrap_cmd_timeout(
                 sprintf(
-                    "curl %s-so /dev/null -w '%%{http_code}\\t%%{time_appconnect}\\t%%{time_starttransfer}\\t%%{speed_download}\\t%%{size_download}' -L --connect-timeout 4 --max-time 6 %s 2>/dev/null; printf '\\t%%d\\n' $?",
+                    "curl %s-so /dev/null -w '%%{http_code}\\t%%{time_appconnect}\\t%%{time_starttransfer}\\t%%{time_total}\\t%%{speed_download}\\t%%{size_download}' -L --connect-timeout 4 --max-time 6 %s 2>/dev/null; printf '\\t%%d\\n' $?",
                     target_flags,
                     shell_quote(target_item.url)
                 ),
@@ -2688,7 +2900,7 @@ function run_probe(engine, args_str, target_key, custom_url) {
         
         cleanup_temp_daemons();
         
-        let total_checks = total_urls + ((voice_enabled && is_discord_voice_strategy(args_str)) ? 1 : 0);
+        let total_checks = http_url_count + ((voice_enabled && is_discord_voice_strategy(args_str)) ? 1 : 0);
         result.passed_checks = passed_count;
         result.total_checks = total_checks;
         if (passed_count > 0) {
@@ -2698,7 +2910,7 @@ function run_probe(engine, args_str, target_key, custom_url) {
             result.ttfb_ms = passed_http_count > 0 ? int(sum_ttfb / double(passed_http_count)) : 0;
             result.speed_kbps = max_speed;
             result.data_bytes = passed_http_count > 0 ? int(sum_data_bytes / double(passed_http_count)) : 0;
-            result.data_verified = all_data_verified && passed_http_count == total_urls;
+            result.data_verified = all_data_verified && passed_http_count == http_url_count;
             result.dpi_verdict = result.data_verified ? "verified_32k" : last_dpi_verdict;
             // Passed-check count dominates performance so a 3/4 strategy
             // beats a 2/3 strategy; latency and throughput break ties.
